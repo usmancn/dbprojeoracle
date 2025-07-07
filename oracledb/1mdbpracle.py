@@ -1,23 +1,28 @@
+import os
 import time
 import oracledb
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
+from dotenv import load_dotenv
+
+# .env dosyasını yükle
+load_dotenv()
 
 
 def get_data_count():
     try:
-        # Oracle veritabanına bağlantı
+        # Oracle veritabanına bağlantı (.env dosyasından)
         conn = oracledb.connect(
-            user="C##ECOMMERCE",
-            password="oracle123",
-            dsn="172.29.112.1:1521/MYCDB"
+            user=os.getenv('DB_USER'),
+            password=os.getenv('DB_PASSWORD'),
+            dsn=f"{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_SERVICE_NAME')}"
         )
 
         cursor = conn.cursor()
 
-        # C##ECOMMERCE.ADDRESSES tablosundan kayıt sayısını al
-        cursor.execute("SELECT COUNT(*) FROM C##ECOMMERCE.ADDRESSES")
+        # Addresses tablosundan kayıt sayısını al
+        cursor.execute(f"SELECT COUNT(*) FROM {os.getenv('DB_USER')}.ADDRESSES")
         count = cursor.fetchone()[0]
 
         cursor.close()
@@ -31,28 +36,39 @@ def get_data_count():
 
 
 # Selenium kurulumu
-service = Service("./chromedriver.exe")
+service = Service(os.getenv('CHROMEDRIVER_PATH'))
 driver = webdriver.Chrome(service=service)
 driver.maximize_window()
-driver.implicitly_wait(30)
+driver.implicitly_wait(int(os.getenv('IMPLICIT_WAIT')))
 
 try:
-    driver.get("http://172.29.112.1:80")
+    # Ana sayfaya git
+    driver.get(os.getenv('SELENIUM_URL'))
 
     # Select kısmından projeyi seç
-    driver.find_element(By.XPATH, "//div[contains(@class, 'ant-select-selector')]").click()
-    driver.find_element(By.XPATH, "//div[contains(text(),'oracleproje')]").click()
+    project_selector = os.getenv('XPATH_PROJECT_SELECTOR')
+    driver.find_element(By.XPATH, project_selector).click()
+
+    # Proje seçimini xpath'e dinamik olarak ekle
+    project_xpath = os.getenv('XPATH_PROJECT_OPTION').format(project_name=os.getenv('PROJECT_NAME'))
+    driver.find_element(By.XPATH, project_xpath).click()
 
     # Case kısmına gel
-    driver.find_element(By.XPATH, "//span[text()='DATA GENERATION CASE']").click()
+    case_xpath = os.getenv('XPATH_CASE_BUTTON').format(case_name=os.getenv('CASE_NAME'))
+    driver.find_element(By.XPATH, case_xpath).click()
 
-    # Hedef: 1 milyon data
-    target_data = 1000000
+    # Hedef veri sayısı ve buton xpath'leri
+    target_data = int(os.getenv('TARGET_DATA_COUNT'))
+    run_button_1_xpath = os.getenv('XPATH_RUN_BUTTON_1')
+    run_button_2_xpath = os.getenv('XPATH_RUN_BUTTON_2')
+    sleep_interval = int(os.getenv('SLEEP_INTERVAL'))
+    error_wait_time = int(os.getenv('ERROR_WAIT_TIME'))
+
     current_run = 0
 
     print("Başlangıç veri sayısı kontrol ediliyor...")
     initial_count = get_data_count()
-    print(f"C##ECOMMERCE.ADDRESSES tablosunda şuan {initial_count:,} kayıt var")
+    print(f"{os.getenv('DB_USER')}.ADDRESSES tablosunda şuan {initial_count:,} kayıt var")
 
     while True:
         # Her döngüde DB'yi kontrol et
@@ -68,18 +84,18 @@ try:
 
         try:
             # İlk run butonuna bas
-            driver.find_element(By.XPATH, "//tbody//tr[1]//button[3]").click()
+            driver.find_element(By.XPATH, run_button_1_xpath).click()
             current_run += 1
             print(f"Run {current_run} başlatıldı")
 
             # İkinci RUN butonuna bas
-            driver.find_element(By.XPATH, "//button[contains(., 'RUN')]").click()
+            driver.find_element(By.XPATH, run_button_2_xpath).click()
             print(f"Veri üretimi başlatıldı")
 
             # İşlem bitene kadar bekle
             while True:
-                time.sleep(2)
-                run_button = driver.find_element(By.XPATH, "//tbody//tr[1]//button[3]")
+                time.sleep(sleep_interval)
+                run_button = driver.find_element(By.XPATH, run_button_1_xpath)
                 if run_button.is_enabled():
                     print("İşlem tamamlandı!")
                     break
@@ -91,8 +107,8 @@ try:
 
         except Exception as e:
             print(f"Hata: {e}")
-            print("5 saniye bekleyip devam")
-            time.sleep(5)
+            print(f"{error_wait_time} saniye bekleyip devam")
+            time.sleep(error_wait_time)
             continue
 
     # Final rapor
